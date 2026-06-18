@@ -23,6 +23,37 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
   String? _generatedCode;
   bool _isGeneratingCode = false;
 
+  // Liste mockée des défis Strava (un réussi, deux en cours/à faire)
+  final List<Map<String, dynamic>> _stravaChallenges = [
+    {
+      'id': 'challenge-gravel-100',
+      'title': 'Michelin Gravel Challenge — 102.4 km',
+      'type': 'GRAVEL',
+      'isCompleted': true,          // Défi réussi !
+      'hasGeneratedCode': false,    // Reste à false tant qu'on n'a pas cliqué
+      'participantsCount': 4871,
+      'statusText': 'DÉFI VALIDÉ - STRAVA',
+    },
+    {
+      'id': 'challenge-route-classic',
+      'title': 'Michelin Route Sprint — 50 km',
+      'type': 'ROUTE',
+      'isCompleted': false,         // Défi en cours
+      'hasGeneratedCode': false,
+      'participantsCount': 1243,
+      'statusText': 'EN COURS - 32 km / 50 km',
+    },
+    {
+      'id': 'challenge-urbain-velotaf',
+      'title': 'Michelin Urbain Commuter — 20 km',
+      'type': 'URBAIN',
+      'isCompleted': false,         // Défi en cours
+      'hasGeneratedCode': false,
+      'participantsCount': 854,
+      'statusText': 'EN COURS - 5 km / 20 km',
+    },
+  ];
+
   // États liés aux Packs
   List<dynamic> _packs = [];
   Map<String, dynamic>? _selectedPack;
@@ -96,7 +127,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
     setState(() {
       _selectedCategory = category;
 
-      // 👈 On adapte l'ID du drop selon l'onglet pour coller à ton seeder et à ta doc
+      // On adapte l'ID du drop selon l'onglet pour coller au seeder
       if (category == 'GRAVEL') {
         _currentDropId = 'drop-gravel-02';
       } else if (category == 'ROUTE') {
@@ -126,9 +157,18 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
       if (result != null) {
         setState(() {
           _generatedCode = result['code'];
+
+          // Trouve le défi associé à la catégorie actuelle et le marque comme déjà généré
+          final currentChallenge = _stravaChallenges.firstWhere(
+                (c) => c['type'] == _selectedCategory,
+            orElse: () => {},
+          );
+          if (currentChallenge.isNotEmpty) {
+            currentChallenge['hasGeneratedCode'] = true;
+          }
         });
 
-        // Affiche un joli Pop-up avec le code de réduction
+        // Affiche une boîte de dialogue avec le code de réduction
         showDialog(
           context: context,
           builder: (BuildContext context) {
@@ -173,7 +213,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
 
   @override
   Widget build(BuildContext context) {
-    // 👈 Sécurité Écran Blanc : Affiche un loader global si les données initiales ne sont pas encore prêtes
+    // Sécurité Écran Blanc : Affiche un loader global si les données initiales ne sont pas encore prêtes
     if (_isLoadingPacks && _selectedPack == null) {
       return const Scaffold(
         backgroundColor: Colors.white,
@@ -182,6 +222,15 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
         ),
       );
     }
+
+    // Extraction dynamique des informations du défi courant pour l'UI
+    final currentChallenge = _stravaChallenges.firstWhere(
+          (c) => c['type'] == _selectedCategory,
+      orElse: () => _stravaChallenges.first,
+    );
+
+    bool isChallengeCompleted = currentChallenge['isCompleted'] ?? false;
+    bool alreadyGenerated = currentChallenge['hasGeneratedCode'] ?? false;
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -215,18 +264,36 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
               ],
             ),
 
-            // --- STRAVA CARD ---
+            // --- STRAVA CARD DYNAMIQUE ---
             Padding(
               padding: const EdgeInsets.all(16.0),
               child: Card(
                 elevation: 2,
                 shadowColor: Colors.black12,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                child: const ListTile(
-                  leading: Icon(Icons.check_circle_outline, color: blueMichelin),
-                  title: Text("Michelin Gravel Challenge — 102.4 km", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                  subtitle: Text("DÉFI VALIDÉ - STRAVA", style: TextStyle(fontSize: 11, color: Colors.grey)),
-                  trailing: Text("⭐ 4,871\n RIDERS", textAlign: TextAlign.center, style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+                child: ListTile(
+                  leading: Icon(
+                    isChallengeCompleted ? Icons.check_circle : Icons.radio_button_unchecked,
+                    color: isChallengeCompleted ? Colors.green : Colors.orange,
+                    size: 26,
+                  ),
+                  title: Text(
+                    currentChallenge['title'] ?? '',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
+                  subtitle: Text(
+                    currentChallenge['statusText'] ?? '',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isChallengeCompleted ? Colors.green : Colors.orange,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  trailing: Text(
+                    "⭐ ${currentChallenge['participantsCount']}\n RIDERS",
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                  ),
                 ),
               ),
             ),
@@ -321,10 +388,9 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
                             height: 200,
                             width: double.infinity,
                             fit: BoxFit.cover,
-                            // 👈 Ce constructeur intercepte l'erreur CORS ou d'URL cassée vue sur image_e418fc.png
                             errorBuilder: (context, error, stackTrace) {
                               return Image.network(
-                                'https://images.unsplash.com/photo-1517649763962-0c623066013b', // Image de secours fiable
+                                'https://images.unsplash.com/photo-1517649763962-0c623066013b',
                                 height: 200,
                                 width: double.infinity,
                                 fit: BoxFit.cover,
@@ -441,7 +507,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
               ),
             ],
 
-            // --- SECTION LA COMMUNAUTÉ (TITRE + BADGE NOTE DYNAMIQUE) ---
+            // --- SECTION LA COMMUNAUTÉ ---
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8.0),
               child: Row(
@@ -464,7 +530,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
               ),
             ),
 
-            // --- LISTE DES AVIS CLIENTS (DYNAMIQUE AU CLIC SUR LE PACK) ---
+            // --- LISTE DES AVIS CLIENTS ---
             if (_isLoadingReviews)
               const Padding(
                 padding: EdgeInsets.all(24.0),
@@ -516,7 +582,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
         ),
       ),
 
-      // --- STICKY BUY BUTTON ---
+      // --- STICKY ACTIONS BUTTON (GÉRÉ SELON L'ÉTAT DU DÉFI STRAVA) ---
       bottomNavigationBar: Container(
         color: Colors.white,
         padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 8.0),
@@ -524,9 +590,11 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ElevatedButton(
-              onPressed: (_selectedPack == null || _isGeneratingCode) ? null : _handleGenerateCode,
+              onPressed: (_selectedPack == null || _isGeneratingCode || !isChallengeCompleted || alreadyGenerated)
+                  ? null
+                  : _handleGenerateCode,
               style: ElevatedButton.styleFrom(
-                backgroundColor: blueMichelin, // On passe en bleu Michelin pour changer le style du bouton d'action
+                backgroundColor: alreadyGenerated ? Colors.grey.shade400 : blueMichelin,
                 foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 54),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
@@ -534,14 +602,28 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
               ),
               child: _isGeneratingCode
                   ? const CircularProgressIndicator(color: Colors.white)
-                  : const Row(
+                  : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.qr_code_2, color: yellowMichelin),
-                  SizedBox(width: 10),
-                  Text("GÉNÉRER UN CODE POUR CE PACK", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: yellowMichelin)),
-                  SizedBox(width: 4),
-                  Icon(Icons.chevron_right, color: yellowMichelin),
+                  Icon(
+                    alreadyGenerated ? Icons.lock_outline : Icons.qr_code_2,
+                    color: alreadyGenerated ? Colors.white70 : yellowMichelin,
+                  ),
+                  const SizedBox(width: 10),
+                  Text(
+                    alreadyGenerated
+                        ? "CODE DÉJÀ GÉNÉRÉ POUR CE DÉFI"
+                        : (!isChallengeCompleted ? "DÉFI EN COURS SUR STRAVA" : "GÉNÉRER UN CODE POUR CE PACK"),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: alreadyGenerated ? Colors.white70 : yellowMichelin,
+                    ),
+                  ),
+                  if (!alreadyGenerated && isChallengeCompleted) ...[
+                    const SizedBox(width: 4),
+                    const Icon(Icons.chevron_right, color: yellowMichelin),
+                  ]
                 ],
               ),
             ),

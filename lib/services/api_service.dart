@@ -16,7 +16,6 @@ class ApiService {
   final _storage = const FlutterSecureStorage();
 
   ApiService._internal() {
-    // Intercepteur pour injecter automatiquement le token Bearer s'il existe
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) async {
         final token = await _storage.read(key: 'auth_token');
