@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_svg: ^2.0.10
+  dio: ^5.7.0               # Pour les requêtes HTTP performantes
+  flutter_secure_storage: ^9.2.2 # Pour stocker le token de manière chiffrée
 
 dev_dependencies:
   flutter_test:
