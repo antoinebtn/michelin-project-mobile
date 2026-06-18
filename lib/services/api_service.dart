@@ -7,7 +7,8 @@ class ApiService {
   factory ApiService() => _instance;
 
   final Dio dio = Dio(BaseOptions(
-    baseUrl: 'https://project.20260143.xyz',
+    // baseUrl: 'https://project.20260143.xyz',
+    baseUrl: 'http://10.0.2.2:3002',
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: const Duration(seconds: 5),
     headers: {'Content-Type': 'application/json'},
