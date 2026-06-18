@@ -26,9 +26,10 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
 
   String? _generatedCode;
   bool _isGeneratingCode = false;
+  final Map<String, bool> _codesGeneratedMap = {}; // Nouveau : stockage robuste par catégorie
 
   // Liste mockée des défis Strava
-  final List<Map<String, dynamic>> _stravaChallenges = [
+  List<Map<String, dynamic>> _stravaChallenges = [
     {
       'id': 'challenge-gravel-100',
       'title': 'Michelin Gravel Challenge — 102.4 km',
@@ -148,26 +149,49 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
       _isGeneratingCode = true;
     });
 
-    final result = await ApiService().generatePackCode(_selectedPack!['id']);
+    try {
+      final result = await ApiService().generatePackCode(_selectedPack!['id']);
 
-    if (mounted) {
-      setState(() {
-        _isGeneratingCode = false;
-      });
+      if (!mounted) return;
 
-      if (result != null) {
+      if (result != null && result['code'] != null) {
         setState(() {
+          _isGeneratingCode = false;
           _generatedCode = result['code'];
-          final currentChallenge = _stravaChallenges.firstWhere(
-                (c) => c['type'] == _selectedCategory,
-            orElse: () => {},
-          );
-          if (currentChallenge.isNotEmpty) {
-            currentChallenge['hasGeneratedCode'] = true;
-          }
+          
+          _codesGeneratedMap[_selectedCategory] = true;
+          
+          _stravaChallenges = _stravaChallenges.map((challenge) {
+            if (challenge['type'] == _selectedCategory) {
+              return {...challenge, 'hasGeneratedCode': true};
+            }
+            return challenge;
+          }).toList();
         });
 
         _showCodeDialog();
+      } else {
+        setState(() {
+          _isGeneratingCode = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Échec de la génération du code. Veuillez réessayer."),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isGeneratingCode = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text("Erreur : ${e.toString()}"),
+            backgroundColor: Colors.red,
+          ),
+        );
       }
     }
   }
@@ -228,7 +252,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
     );
 
     bool isChallengeCompleted = currentChallenge['isCompleted'] ?? false;
-    bool alreadyGenerated = currentChallenge['hasGeneratedCode'] ?? false;
+    bool alreadyGenerated = (currentChallenge['hasGeneratedCode'] ?? false) || (_codesGeneratedMap[_selectedCategory] ?? false);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -237,7 +261,8 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
           children: [
             const HeaderSection(),
             StravaChallengeCard(challenge: currentChallenge),
-            CountdownSection(completedAt: currentChallenge['completedAt'] as DateTime?),
+            if (!alreadyGenerated) 
+              CountdownSection(completedAt: currentChallenge['completedAt'] as DateTime?),
             const Divider(color: MichelinTheme.borderGrey),
             CategoryTabs(
               selectedCategory: _selectedCategory,
@@ -328,6 +353,9 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
   }
 
   Widget _buildBottomActions(bool isChallengeCompleted, bool alreadyGenerated) {
+    // Le bouton est inactif si : pas de pack, génération en cours, défi non complété OU déjà généré
+    final bool isActuallyDisabled = _selectedPack == null || _isGeneratingCode || !isChallengeCompleted || alreadyGenerated;
+
     return Container(
       color: Colors.white,
       padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 8.0),
@@ -335,18 +363,22 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
         mainAxisSize: MainAxisSize.min,
         children: [
           ElevatedButton(
-            onPressed: (_selectedPack == null || _isGeneratingCode || !isChallengeCompleted || alreadyGenerated)
-                ? null
-                : _handleGenerateCode,
+            onPressed: isActuallyDisabled ? null : _handleGenerateCode,
             style: ElevatedButton.styleFrom(
-              backgroundColor: alreadyGenerated ? Colors.grey.shade400 : MichelinTheme.blueMichelin,
+              backgroundColor: MichelinTheme.blueMichelin,
+              disabledBackgroundColor: Colors.grey.shade400, // Forcer le gris quand désactivé
               foregroundColor: Colors.white,
+              disabledForegroundColor: Colors.white70, // Texte en blanc cassé quand désactivé
               minimumSize: const Size(double.infinity, 54),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
               elevation: 0,
             ),
             child: _isGeneratingCode
-                ? const CircularProgressIndicator(color: Colors.white)
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
                 : Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
@@ -365,7 +397,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
                     color: alreadyGenerated ? Colors.white70 : MichelinTheme.yellowMichelin,
                   ),
                 ),
-                if (!alreadyGenerated && isChallengeCompleted) ...[
+                if (!alreadyGenerated && isChallengeCompleted && !_isGeneratingCode) ...[
                   const SizedBox(width: 4),
                   const Icon(Icons.chevron_right, color: MichelinTheme.yellowMichelin),
                 ]

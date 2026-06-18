@@ -7,8 +7,8 @@ class ApiService {
   factory ApiService() => _instance;
 
   final Dio dio = Dio(BaseOptions(
-    // baseUrl: 'https://project.20260143.xyz',
-    baseUrl: 'http://10.0.2.2:3002',
+    baseUrl: 'https://project.20260143.xyz',
+    // baseUrl: 'http://10.0.2.2:3002',
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: const Duration(seconds: 5),
     headers: {'Content-Type': 'application/json'},
@@ -35,9 +35,6 @@ class ApiService {
     ));
   }
 
-  // --- SERVICE AUTHENTIFICATION ---
-
-  /// POST /api/auth/login
   Future<bool> login(String email, String password) async {
     try {
       final response = await dio.post('/api/auth/login', data: {
@@ -47,7 +44,6 @@ class ApiService {
 
       if (response.statusCode == 200) {
         final token = response.data['token'];
-        // Sauvegarde sécurisée du token
         await _storage.write(key: 'auth_token', value: token);
         return true;
       }
@@ -58,19 +54,14 @@ class ApiService {
     }
   }
 
-  /// DELETE /api/auth/logout
   Future<void> logout() async {
     try {
       await dio.delete('/api/auth/logout');
     } finally {
-      // Quoi qu'il arrive, on nettoie le stockage local
       await _storage.delete(key: 'auth_token');
     }
   }
 
-  // --- SERVICE PRODUITS & AVIS ---
-
-  /// GET /api/products/:productId/reviews
   Future<Map<String, dynamic>?> getProductReviews(String productId) async {
     try {
       final response = await dio.get('/api/products/$productId/reviews');
@@ -87,7 +78,6 @@ class ApiService {
 
   Future<List<dynamic>?> getDropPacks(String dropId, {String? category}) async {
     try {
-      // On ajoute le query param 'category' si spécifié
       final Map<String, dynamic> queryParameters = {};
       if (category != null) {
         queryParameters['category'] = category;
@@ -115,8 +105,8 @@ class ApiService {
         data: {'packId': packId},
       );
 
-      if (response.statusCode == 200) {
-        return response.data;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return response.data as Map<String, dynamic>?;
       }
       return null;
     } catch (e) {
