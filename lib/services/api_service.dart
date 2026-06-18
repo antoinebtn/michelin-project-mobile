@@ -7,7 +7,7 @@ class ApiService {
   factory ApiService() => _instance;
 
   final Dio dio = Dio(BaseOptions(
-    baseUrl: 'http://localhost:3002', // Change par ton domaine de prod si besoin
+    baseUrl: 'https://project.20260143.xyz',
     connectTimeout: const Duration(seconds: 5),
     receiveTimeout: const Duration(seconds: 5),
     headers: {'Content-Type': 'application/json'},
@@ -81,6 +81,46 @@ class ApiService {
       return null;
     } on DioException catch (e) {
       print("Erreur récupération avis: ${e.response?.data ?? e.message}");
+      return null;
+    }
+  }
+
+  Future<List<dynamic>?> getDropPacks(String dropId, {String? category}) async {
+    try {
+      // On ajoute le query param 'category' si spécifié
+      final Map<String, dynamic> queryParameters = {};
+      if (category != null) {
+        queryParameters['category'] = category;
+      }
+
+      final response = await dio.get(
+        '/api/drops/$dropId/packs',
+        queryParameters: queryParameters,
+      );
+
+      if (response.statusCode == 200) {
+        return response.data as List<dynamic>;
+      }
+      return null;
+    } on DioException catch (e) {
+      print("Erreur récupération packs: ${e.response?.data ?? e.message}");
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> generatePackCode(String packId) async {
+    try {
+      final response = await dio.post(
+        '/api/packs/generate-code',
+        data: {'packId': packId},
+      );
+
+      if (response.statusCode == 200) {
+        return response.data;
+      }
+      return null;
+    } catch (e) {
+      print("Erreur lors de la génération du code: $e");
       return null;
     }
   }

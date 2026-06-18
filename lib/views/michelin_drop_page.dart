@@ -9,44 +9,180 @@ class MichelinDropPage extends StatefulWidget {
 }
 
 class _MichelinDropPageState extends State<MichelinDropPage> {
-  // Déclaration des couleurs
+  // Déclaration des couleurs de la charte Michelin
   static const Color blueMichelin = Color(0xFF1C4494);
   static const Color yellowMichelin = Color(0xFFFFF000);
   static const Color textMuted = Color(0xFF5C76A6);
   static const Color bgLight = Color(0xFFF8FAFC);
   static const Color borderGrey = Color(0xFFE2E8F0);
 
-  // Variables d'état pour les avis de l'API
+  // Variables d'état globales
+  String _currentDropId = 'drop-gravel-02'; // ID du drop courant
+  String _selectedCategory = 'GRAVEL';            // Onglet par défaut
+
+  String? _generatedCode;
+  bool _isGeneratingCode = false;
+
+  // États liés aux Packs
+  List<dynamic> _packs = [];
+  Map<String, dynamic>? _selectedPack;
+  bool _isLoadingPacks = true;
+
+  // États liés aux Avis du Pack sélectionné
   List<dynamic> _reviews = [];
-  double _averageRating = 4.8; // Valeur par défaut
+  double _averageRating = 4.8;
   int _totalReviews = 0;
-  bool _isLoadingReviews = true;
+  bool _isLoadingReviews = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchApiReviews();
+    _loadDropPacks(); // Charge les packs de la catégorie par défaut au démarrage
   }
 
-  // Requête API pour récupérer les avis du produit
-  void _fetchApiReviews() async {
-    final data = await ApiService().getProductReviews('pack-gravel-premium');
-    if (data != null && mounted) {
+  // 1. Récupère les packs filtrés par catégorie depuis l'API
+  void _loadDropPacks() async {
+    setState(() {
+      _isLoadingPacks = true;
+    });
+
+    final packsData = await ApiService().getDropPacks(_currentDropId, category: _selectedCategory);
+
+    if (packsData != null && packsData.isNotEmpty && mounted) {
       setState(() {
-        _reviews = data['reviews'] ?? [];
-        _averageRating = (data['averageRating'] as num?)?.toDouble() ?? 4.8;
-        _totalReviews = data['totalReviews'] ?? 0;
+        _packs = packsData;
+        _isLoadingPacks = false;
+      });
+      // Par défaut, on sélectionne et charge les avis du premier pack retourné
+      _onPackSelected(packsData[0]);
+    } else if (mounted) {
+      setState(() {
+        _packs = [];
+        _selectedPack = null;
+        _reviews = [];
+        _isLoadingPacks = false;
+      });
+    }
+  }
+
+  // 2. Action au clic sur un Pack : charge dynamiquement ses données et ses avis associés
+  void _onPackSelected(Map<String, dynamic> pack) async {
+    setState(() {
+      _selectedPack = pack;
+      _isLoadingReviews = true;
+    });
+
+    final reviewData = await ApiService().getProductReviews(pack['id']);
+
+    if (reviewData != null && mounted) {
+      setState(() {
+        _reviews = reviewData['reviews'] ?? [];
+        _averageRating = (reviewData['averageRating'] as num?)?.toDouble() ?? 4.8;
+        _totalReviews = reviewData['totalReviews'] ?? 0;
         _isLoadingReviews = false;
       });
     } else if (mounted) {
       setState(() {
+        _reviews = [];
         _isLoadingReviews = false;
       });
     }
   }
 
+  // Changer de catégorie (ROUTE, GRAVEL, URBAIN) au clic sur les onglets
+  void _onCategoryChanged(String category) {
+    if (_selectedCategory == category) return;
+
+    setState(() {
+      _selectedCategory = category;
+
+      // 👈 On adapte l'ID du drop selon l'onglet pour coller à ton seeder et à ta doc
+      if (category == 'GRAVEL') {
+        _currentDropId = 'drop-gravel-02';
+      } else if (category == 'ROUTE') {
+        _currentDropId = 'drop-route-01';
+      } else if (category == 'URBAIN') {
+        _currentDropId = 'drop-urbain-03';
+      }
+    });
+
+    _loadDropPacks();
+  }
+
+  void _handleGenerateCode() async {
+    if (_selectedPack == null) return;
+
+    setState(() {
+      _isGeneratingCode = true;
+    });
+
+    final result = await ApiService().generatePackCode(_selectedPack!['id']);
+
+    if (mounted) {
+      setState(() {
+        _isGeneratingCode = false;
+      });
+
+      if (result != null) {
+        setState(() {
+          _generatedCode = result['code'];
+        });
+
+        // Affiche un joli Pop-up avec le code de réduction
+        showDialog(
+          context: context,
+          builder: (BuildContext context) {
+            return AlertDialog(
+              title: const Text("VOTRE CODE EXCLUSIF", style: TextStyle(color: blueMichelin, fontWeight: FontWeight.bold)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text("Présentez ce code en magasin ou sur le site Michelin pour débloquer votre offre."),
+                  const SizedBox(height: 20),
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: yellowMichelin.withOpacity(0.2),
+                      border: Border.all(color: yellowMichelin, width: 2),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      _generatedCode!,
+                      style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, letterSpacing: 1.5, color: blueMichelin),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  const Text(
+                    "⌛ Valide pendant 48 heures uniquement.",
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.red),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text("FERMER", style: TextStyle(color: blueMichelin, fontWeight: FontWeight.bold)),
+                ),
+              ],
+            );
+          },
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // 👈 Sécurité Écran Blanc : Affiche un loader global si les données initiales ne sont pas encore prêtes
+    if (_isLoadingPacks && _selectedPack == null) {
+      return const Scaffold(
+        backgroundColor: Colors.white,
+        body: Center(
+          child: CircularProgressIndicator(color: blueMichelin),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: SingleChildScrollView(
@@ -65,14 +201,14 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
                   ),
                 ),
                 Container(height: 300, color: blueMichelin.withOpacity(0.4)),
-                const Positioned(
+                Positioned(
                   bottom: 20,
                   left: 20,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text("UNLOCK &", style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.w600, fontStyle: FontStyle.italic)),
-                      Text("RIDE.", style: TextStyle(color: yellowMichelin, fontSize: 36, fontWeight: FontWeight.w600, fontStyle: FontStyle.italic)),
+                    children: const [
+                      Text("UNLOCK &", style: TextStyle(color: Colors.white, fontSize: 36, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
+                      Text("RIDE.", style: TextStyle(color: yellowMichelin, fontSize: 36, fontWeight: FontWeight.bold, fontStyle: FontStyle.italic)),
                     ],
                   ),
                 )
@@ -114,130 +250,196 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
             ),
             const Divider(color: borderGrey),
 
-            // --- TABS ---
+            // --- TABS (FILTRE DYNAMIQUE PAR CATÉGORIE) ---
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8),
               child: Row(
                 children: [
-                  _buildTabButton("ROUTE", false),
-                  _buildTabButton("GRAVEL", true),
-                  _buildTabButton("URBAIN", false),
+                  _buildTabButton("ROUTE", _selectedCategory == "ROUTE"),
+                  _buildTabButton("GRAVEL", _selectedCategory == "GRAVEL"),
+                  _buildTabButton("URBAIN", _selectedCategory == "URBAIN"),
                 ],
               ),
             ),
 
-            // --- PRODUCT CARD ---
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12),
-              child: Card(
-                elevation: 4,
-                shadowColor: Colors.black26,
-                clipBehavior: Clip.antiAlias,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            // --- LISTE DES PACKS SÉLECTIONNABLES ---
+            if (_packs.isEmpty && !_isLoadingPacks)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text("Aucun pack disponible dans cette catégorie.", style: TextStyle(color: Colors.grey, fontSize: 13)),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Stack(
-                      children: [
-                        Image.network('https://images.unsplash.com/photo-1517649763962-0c623066013b', height: 200, width: double.infinity, fit: BoxFit.cover),
-                        Positioned(
-                          top: 12, left: 12,
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                            color: yellowMichelin,
-                            child: const Text("EXCLUSIF DROP", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.black)),
-                          ),
-                        ),
-                      ],
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text("POWER GRAVEL", style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: blueMichelin, letterSpacing: -0.5)),
-                          const SizedBox(height: 4),
-                          const Text("Pack Gravel — 2 pneus + chambre à air + casquette", style: TextStyle(color: textMuted, fontSize: 13)),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic,
-                                children: [
-                                  const Text("94 €", style: TextStyle(fontSize: 26, fontWeight: FontWeight.w600, color: blueMichelin)),
-                                  const SizedBox(width: 8),
-                                  Text("142 €", style: TextStyle(fontSize: 14, color: Colors.grey[400], decoration: TextDecoration.lineThrough)),
-                                ],
+                    const Text("CHOISISSEZ VOTRE PACK :", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: textMuted)),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: _packs.map((pack) {
+                        bool isCurrent = _selectedPack?['id'] == pack['id'];
+                        return Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: OutlinedButton(
+                              onPressed: () => _onPackSelected(pack),
+                              style: OutlinedButton.styleFrom(
+                                backgroundColor: isCurrent ? blueMichelin.withOpacity(0.05) : Colors.white,
+                                side: BorderSide(color: isCurrent ? blueMichelin : borderGrey, width: isCurrent ? 2 : 1),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                               ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(color: yellowMichelin, borderRadius: BorderRadius.circular(2)),
-                                child: const Text("-34%", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black)),
-                              )
-                            ],
-                          )
+                              child: Text(
+                                pack['name'] ?? '',
+                                style: TextStyle(color: isCurrent ? blueMichelin : Colors.black87, fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+
+            // --- CARTE DU PRODUIT SÉLECTIONNÉ ---
+            if (_selectedPack != null) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12),
+                child: Card(
+                  elevation: 4,
+                  shadowColor: Colors.black26,
+                  clipBehavior: Clip.antiAlias,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Stack(
+                        children: [
+                          Image.network(
+                            _selectedPack!['imageUrl'] ?? 'https://images.unsplash.com/photo-1517649763962-0c623066013b',
+                            height: 200,
+                            width: double.infinity,
+                            fit: BoxFit.cover,
+                            // 👈 Ce constructeur intercepte l'erreur CORS ou d'URL cassée vue sur image_e418fc.png
+                            errorBuilder: (context, error, stackTrace) {
+                              return Image.network(
+                                'https://images.unsplash.com/photo-1517649763962-0c623066013b', // Image de secours fiable
+                                height: 200,
+                                width: double.infinity,
+                                fit: BoxFit.cover,
+                              );
+                            },
+                          ),
+                          Positioned(
+                            top: 12, left: 12,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              color: yellowMichelin,
+                              child: const Text("EXCLUSIF DROP", style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.black)),
+                            ),
+                          ),
                         ],
                       ),
-                    )
-                  ],
+                      Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(_selectedPack!['name'] ?? '', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: blueMichelin, letterSpacing: -0.5)),
+                            const SizedBox(height: 4),
+                            Text(_selectedPack!['subtitle'] ?? '', style: const TextStyle(color: textMuted, fontSize: 13)),
+                            const SizedBox(height: 16),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic,
+                                  children: [
+                                    Text("${_selectedPack!['price']} €", style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: blueMichelin)),
+                                    const SizedBox(width: 8),
+                                    Text("${_selectedPack!['originalPrice']} €", style: TextStyle(fontSize: 14, color: Colors.grey[400], decoration: TextDecoration.lineThrough)),
+                                  ],
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(color: yellowMichelin, borderRadius: BorderRadius.circular(2)),
+                                  child: Text("-${_selectedPack!['discountPercentage']}%", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12, color: Colors.black)),
+                                )
+                              ],
+                            )
+                          ],
+                        ),
+                      )
+                    ],
+                  ),
                 ),
               ),
-            ),
 
-            // --- STOCK BAR ---
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 4),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Text("STOCK DROP", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: blueMichelin)),
-                  Text("33% restant", style: TextStyle(fontSize: 11, color: blueMichelin, fontWeight: FontWeight.bold)),
-                ],
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 4),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: const LinearProgressIndicator(value: 0.67, backgroundColor: Color(0xFFE2E8F0), color: yellowMichelin, minHeight: 8),
-              ),
-            ),
-            const SizedBox(height: 20),
-
-            // --- TECHNOLOGIE ---
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 8),
-              child: Align(alignment: Alignment.centerLeft, child: Text("TECHNOLOGIE", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: blueMichelin))),
-            ),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16.0),
-              child: Container(
-                decoration: BoxDecoration(color: bgLight, border: Border.all(color: borderGrey), borderRadius: BorderRadius.circular(8)),
-                child: Column(
+              // --- STOCK BAR DYNAMIQUE ---
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 4),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    _buildSpecRow(Icons.bolt, "Résistance au roulement", "Ultra-Low (3/3)"),
-                    const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Divider(height: 1, color: borderGrey)),
-                    _buildSpecRow(Icons.shield_outlined, "Protection", "ProTek+ 5 mm"),
-                    const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Divider(height: 1, color: borderGrey)),
-                    _buildSpecRow(Icons.swap_calls, "Dimension", "700x40c / 650b-47"),
+                    const Text("STOCK DROP", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: blueMichelin)),
+                    Text("${_selectedPack!['stock']?['remainingPercentage'] ?? 0}% restant", style: const TextStyle(fontSize: 11, color: blueMichelin, fontWeight: FontWeight.bold)),
                   ],
                 ),
               ),
-            ),
-
-            // --- BORDURE DESCRIPTION ---
-            Padding(
-              padding: const EdgeInsets.all(20.0),
-              child: Container(
-                padding: const EdgeInsets.only(left: 16.0, top: 4.0, bottom: 4.0),
-                decoration: const BoxDecoration(border: Border(left: BorderSide(color: yellowMichelin, width: 4.0))),
-                child: const Text(
-                  "Conçu pour les terrains mixtes — asphalte et gravier — le Power Gravel offre la polyvalence que tu attends sans compromis sur la vitesse. Simple. Efficace. Michelin.",
-                  style: TextStyle(fontSize: 13.0, color: Color(0xFF334155), height: 1.4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 4),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(4),
+                  child: LinearProgressIndicator(
+                      value: ((_selectedPack!['stock']?['remainingPercentage'] ?? 0) / 100).toDouble(),
+                      backgroundColor: const Color(0xFFE2E8F0), color: yellowMichelin, minHeight: 8
+                  ),
                 ),
               ),
-            ),
+              const SizedBox(height: 20),
+
+              // --- TECHNOLOGIES DYNAMIQUES DE L'API ---
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20.0, vertical: 8),
+                child: Align(alignment: Alignment.centerLeft, child: Text("TECHNOLOGIE", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: blueMichelin))),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                child: Container(
+                  decoration: BoxDecoration(color: bgLight, border: Border.all(color: borderGrey), borderRadius: BorderRadius.circular(8)),
+                  child: Column(
+                    children: (_selectedPack!['technologies'] as List<dynamic>? ?? []).map<Widget>((tech) {
+                      IconData techIcon = Icons.star_border;
+                      if (tech['icon'] == 'bolt') techIcon = Icons.bolt;
+                      if (tech['icon'] == 'shield') techIcon = Icons.shield_outlined;
+                      if (tech['icon'] == 'straighten') techIcon = Icons.straighten;
+
+                      return Column(
+                        children: [
+                          _buildSpecRow(techIcon, tech['label'] ?? '', tech['value'] ?? ''),
+                          if (tech != (_selectedPack!['technologies'] as List).last)
+                            const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: Divider(height: 1, color: borderGrey)),
+                        ],
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+
+              // --- BORDURE DESCRIPTION ---
+              Padding(
+                padding: const EdgeInsets.all(20.0),
+                child: Container(
+                  padding: const EdgeInsets.only(left: 16.0, top: 4.0, bottom: 4.0),
+                  decoration: const BoxDecoration(border: Border(left: BorderSide(color: yellowMichelin, width: 4.0))),
+                  child: Text(
+                    _selectedPack!['description'] ?? '',
+                    style: const TextStyle(fontSize: 13.0, color: Color(0xFF334155), height: 1.4),
+                  ),
+                ),
+              ),
+            ],
 
             // --- SECTION LA COMMUNAUTÉ (TITRE + BADGE NOTE DYNAMIQUE) ---
             Padding(
@@ -262,7 +464,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
               ),
             ),
 
-            // --- LISTE DES AVIS CLIENTS (DYNAMIQUE) ---
+            // --- LISTE DES AVIS CLIENTS (DYNAMIQUE AU CLIC SUR LE PACK) ---
             if (_isLoadingReviews)
               const Padding(
                 padding: EdgeInsets.all(24.0),
@@ -314,7 +516,7 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
         ),
       ),
 
-      // --- STICKY BUY BUTTON WITH REASSURANCE ---
+      // --- STICKY BUY BUTTON ---
       bottomNavigationBar: Container(
         color: Colors.white,
         padding: const EdgeInsets.fromLTRB(12.0, 12.0, 12.0, 8.0),
@@ -322,22 +524,29 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ElevatedButton(
-              onPressed: () {},
+              onPressed: (_selectedPack == null || _isGeneratingCode) ? null : _handleGenerateCode,
               style: ElevatedButton.styleFrom(
-                backgroundColor: yellowMichelin, foregroundColor: blueMichelin,
+                backgroundColor: blueMichelin, // On passe en bleu Michelin pour changer le style du bouton d'action
+                foregroundColor: Colors.white,
                 minimumSize: const Size(double.infinity, 54),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)), elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                elevation: 0,
               ),
-              child: const Row(
+              child: _isGeneratingCode
+                  ? const CircularProgressIndicator(color: Colors.white)
+                  : const Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Text("ACHETER MAINTENANT", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 16)),
-                  Icon(Icons.chevron_right),
+                  Icon(Icons.qr_code_2, color: yellowMichelin),
+                  SizedBox(width: 10),
+                  Text("GÉNÉRER UN CODE POUR CE PACK", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: yellowMichelin)),
+                  SizedBox(width: 4),
+                  Icon(Icons.chevron_right, color: yellowMichelin),
                 ],
               ),
             ),
             const SizedBox(height: 8),
-            const Text("Paiement sécurisé · Livraison 48h · Retour gratuit", style: TextStyle(fontSize: 10, color: textMuted, fontWeight: FontWeight.w500)),
+            const Text("Code unique réservé aux membres Strava éligibles · Validité 48h", style: TextStyle(fontSize: 10, color: textMuted, fontWeight: FontWeight.w500)),
           ],
         ),
       ),
@@ -360,10 +569,13 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
 
   Widget _buildTabButton(String text, bool isSelected) {
     return Expanded(
-      child: Container(
-        alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
-        decoration: BoxDecoration(color: isSelected ? blueMichelin : Colors.white, border: Border.all(color: borderGrey)),
-        child: Text(text, style: TextStyle(color: isSelected ? Colors.white : Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
+      child: InkWell(
+        onTap: () => _onCategoryChanged(text), // Filtre sur l'API au changement d'onglet
+        child: Container(
+          alignment: Alignment.center, padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(color: isSelected ? blueMichelin : Colors.white, border: Border.all(color: borderGrey)),
+          child: Text(text, style: TextStyle(color: isSelected ? Colors.white : Colors.grey, fontWeight: FontWeight.bold, fontSize: 12)),
+        ),
       ),
     );
   }
@@ -397,7 +609,11 @@ class _MichelinDropPageState extends State<MichelinDropPage> {
           children: [
             Row(
               children: [
-                CircleAvatar(radius: 14, backgroundColor: blueMichelin, child: Text(initial, style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))),
+                CircleAvatar(
+                    radius: 14,
+                    backgroundColor: blueMichelin,
+                    child: Text(initial.toUpperCase(), style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold))
+                ),
                 const SizedBox(width: 10),
                 Text(name, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: blueMichelin)),
                 const Spacer(),
